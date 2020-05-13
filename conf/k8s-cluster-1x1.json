@@ -1,0 +1,49 @@
+{
+  "actions": [
+      {
+          "operation": "launch-instance",
+          "num_instances": 2,
+          "hostname_base": "k8s",
+          "plan": "c2.medium.x86",
+          "facility": "sjc1",
+          "operating_system": "ubuntu_16_04",
+          "userdata": "",
+          "customdata": "",
+          "network_mode": "hybrid",
+          "k8s_vlan_tag": "k8s-backend01",
+          "ip_addresses": [
+              {
+                  "address_family": 4,
+                  "public": false
+              },
+              {
+                  "address_family": 4,
+                  "public": true
+              }
+          ]
+      },
+      {
+          "operation": "pf9-build-cluster",
+          "ssh_username" : "root",
+          "ssh_key" : "~/.ssh/id_rsa",
+          "masters": [
+              { "hostname": "k8s01", "node_ip": "172.16.0.1", "node_ip_mask": "255.255.255.0", "interface": "enp1s0f1" }
+          ],
+          "workers": [
+              { "hostname": "k8s02", "node_ip": "172.16.0.2", "node_ip_mask": "255.255.255.0", "interface": "enp1s0f1" }
+          ],
+          "k8s_network_tag": "k8s-backend01",
+          "cluster": {
+            "name": "pkt01",
+            "master_vip_ipv4": "192.167.100.200",
+            "master_vip_iface": "enp1s0f1",
+            "metallb_cidr": "192.167.100.201-192.167.100.254",
+            "containers_cidr": "192.168.0.0/16",
+            "services_cidr": "192.169.0.0/16",
+            "privileged": 1,
+            "app_catalog_enabled": 0,
+            "allow_workloads_on_master": 0
+          }
+      }
+  ]
+}

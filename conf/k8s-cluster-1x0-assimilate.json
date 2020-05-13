@@ -1,0 +1,32 @@
+{
+  "actions": [
+      {
+          "operation": "imported-instances",
+          "instances": {
+              "k8s01": "10.238.0.15"
+          }
+      },
+      {
+          "operation": "pf9-build-cluster",
+          "ssh_username" : "cmadmin",
+          "ssh_key" : "~/env-setup/macs/imac01/keys/cm-master",
+          "masters": [
+              { "hostname": "k8s01", "node_ip": "10.0.2.15", "node_ip_mask": "255.255.255.0", "interface": "enp0s3" }
+          ],
+          "workers": [
+          ],
+          "k8s_network_tag": "k8s-backend01",
+          "cluster": {
+            "name": "pkt03",
+            "master_vip_ipv4": "10.0.2.200",
+            "master_vip_iface": "enp0s3",
+            "metallb_cidr": "10.0.2.201-10.0.2.250",
+            "containers_cidr": "192.168.0.0/16",
+            "services_cidr": "192.169.0.0/16",
+            "privileged": 1,
+            "app_catalog_enabled": 0,
+            "allow_workloads_on_master": 0
+          }
+      }
+  ]
+}

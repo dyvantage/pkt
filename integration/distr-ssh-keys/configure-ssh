@@ -1,0 +1,141 @@
+#!/bin/bash
+
+basedir=$(dirname $0)
+config_file="${basedir}/cluster.conf"
+nodes=""
+build_id="705740"
+access_key=~/.ssh/id_rsa
+
+usage() {
+  echo -e "Usage: `basename $0` [-b <build_id>] [-k <access-key>] <public-key> <private-key> <username> <home-directory> <node> [<node> ...]\n"
+  exit 1
+}
+
+assert() {
+  if [ $# -eq 1 ]; then echo "ASSERT: ${1}"; fi
+  exit 1
+}
+
+# validate config
+if [ ! -r ${config_file} ]; then assert "missing configuration file: ${config_file}"; fi
+
+# process optional paramters
+while [ $# -gt 0 ]; do
+  case ${1} in
+  -b)
+    if [ $# -lt 2 ]; then usage; fi
+    build_id=${2}
+    shift 2
+    ;;
+  -k)
+    if [ $# -lt 2 ]; then usage; fi
+    access_key=${2}
+    shift 2
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+
+# process positional parameters
+if [ $# -lt 4 ]; then usage; fi
+public_key=${1}
+private_key=${2}
+username=${3}
+home_dir=${4}
+
+# validate key
+if [ ! -r ${private_key} ]; then assert "invalid private key: ${private_key}"; fi
+
+# get nodes from commandline
+shift 4
+while [ $# -gt 0 ]; do
+  if [ -z "${nodes}" ]; then nodes=${1}; else nodes="${nodes} ${1}"; fi
+  shift
+done
+
+# process nodes
+for node in ${nodes}; do
+  # lookup node
+  ip=$(grep ^${node} ${config_file} | cut -d \| -f2)
+  if [ -z "${ip}" ]; then assert "node not defined in ${config_file}"; fi
+
+  # display current node
+  echo "[Configuring ${node}]"
+  ssh-keyscan ${ip} 2>/dev/null >> ~/.ssh/known_hosts
+
+  # copy public keys
+  echo "--> copying public key to ${node}:${home_dir}/.ssh/id_rsa.pub"
+  scp -i ${access_key} ${public_key} root@${ip}:${home_dir}/.ssh/id_rsa.pub > /dev/null 2>&1
+  if [ $? -ne 0 ]; then assert "failed to copy public key"; fi
+
+  # copy private key
+  echo "--> copying private key to ${node}:${home_dir}/.ssh/id_rsa"
+  scp -i ${access_key} ${private_key} root@${ip}:${home_dir}/.ssh/id_rsa > /dev/null 2>&1
+  if [ $? -ne 0 ]; then assert "failed to copy private key"; fi
+
+  # update authorized_hosts
+  echo "--> adding public key to authorized_keys"
+  ssh -i ${access_key} root@${ip} "cat ${home_dir}/.ssh/id_rsa.pub >> ${home_dir}/.ssh/authorized_keys" > /dev/null 2>&1
+
+  # add private key to ssh
+  echo "--> registering private key to ssh (ssh-add)"
+  ssh -i ${access_key} root@${ip} "eval \"$(ssh-agent)\"; ssh-add ${home_dir}/.ssh/id_rsa" > /dev/null 2>&1
+
+  # set hostname
+  echo "--> setting hostname to ${node}"
+  ssh -i ${access_key} root@${ip} "hostnamectl set-hostname ${node}"
+
+  # update /etc/hosts
+  echo -n "--> adding entry to /etc/hosts for"
+  for tmphost in ${nodes}; do
+    # lookup node
+    tmpip=$(grep ^${tmphost} ${config_file} | cut -d \| -f2)
+    if [ -z "${tmpip}" ]; then assert "node not defined in ${config_file}"; fi
+
+    # update /etc/hosts
+    echo -n " ${tmphost} (${tmpip})"
+    ssh -i ${access_key} root@${ip} "sed -i \"/${tmpip} ${tmphost}/d\" /etc/hosts" > /dev/null 2>&1
+    ssh -i ${access_key} root@${ip} "echo "${tmpip} ${tmphost}" >> /etc/hosts"
+  done
+  echo
+
+  # update known_hosts
+  echo -n "--> adding known_hosts entry for"
+  for tmphost in ${nodes}; do
+    # lookup node
+    tmpip=$(grep ^${tmphost} ${config_file} | cut -d \| -f2)
+    if [ -z "${tmpip}" ]; then assert "node not defined in ${config_file}"; fi
+    
+    # add known_hosts entry
+    echo -n " ${tmphost}"
+    ssh -i ${access_key} root@${ip} "ssh-keyscan ${tmphost} >> ${home_dir}/.ssh/known_hosts" > /dev/null 2>&1
+    echo -n " ${tmpip}"
+    ssh -i ${access_key} root@${ip} "ssh-keyscan ${tmpip} >> ${home_dir}/.ssh/known_hosts" > /dev/null 2>&1
+  done
+  echo
+
+  # set permissions
+  echo "--> chown -R ${username}:${username} ${home_dir}/.ssh"
+  echo "--> chmod 0400 ${home_dir}/.ssh/id_rsa*"
+  echo "--> chmod 0600 ${home_dir}/.ssh/known_hosts"
+  echo "--> chmod 0600 ${home_dir}/.ssh/authorized_keys"
+  ssh -i ${access_key} root@${ip} "chown -R ${username}:${username} ${home_dir}/.ssh"
+  ssh -i ${access_key} root@${ip} "chmod 0400 ${home_dir}/.ssh/id_rsa*"
+  ssh -i ${access_key} root@${ip} "chmod 0600 ${home_dir}/.ssh/known_hosts"
+  ssh -i ${access_key} root@${ip} "chmod 0600 ${home_dir}/.ssh/authorized_keys"
+
+  # copy installer
+  #echo "--> copying ISV installer (build: ${build_id})"
+  #ssh -i ${access_key} root@${ip} \
+  #    "curl -u danwright:changeme -O http://10.1.10.14:8111/repository/download/Pf9project_IsvBuilds_IsvTarball/${build_id}:id/tarball/installer" > /dev/null 2>&1
+
+  # run installer
+  #echo "--> running ISV installer (log = ${home_dir}/installer.log)"
+  #ssh -i ${access_key} root@${ip} "bash /root/installer > ${home_dir}/installer.log 2>&1"
+
+  echo
+done
+
+exit 0
